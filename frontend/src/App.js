@@ -308,6 +308,7 @@ const GameScreen = ({ gameState, onRoll, onScore, onRestart, onBackToTitle, poss
         await onRestart();
         setHeldDice([false, false, false, false, false]);
         setLastScoredCategory(null);
+        setIsRolling(false);
       } catch (error) {
         console.error('Error restarting game:', error);
         alert('Error restarting game. Please try again.');
