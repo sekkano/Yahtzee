@@ -602,17 +602,21 @@ function App() {
 
   const restartGame = async () => {
     if (!gameState?.id) {
+      console.error('No game ID available for restart');
       throw new Error('No game ID available');
     }
     
+    console.log('Attempting to restart game:', gameState.id);
+    
     try {
       const response = await axios.post(`${API}/games/${gameState.id}/restart`);
+      console.log('Restart response:', response.data);
       setGameState(response.data);
       setPossibleScores({});
       return response.data;
     } catch (error) {
       console.error('Error restarting game:', error);
-      throw error; // Re-throw so handleRestart can catch it
+      throw error;
     }
   };
 
