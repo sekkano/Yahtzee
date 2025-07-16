@@ -304,7 +304,8 @@ const GameScreen = ({ gameState, onRoll, onScore, onRestart, onBackToTitle, poss
   };
 
   const handleRestart = async () => {
-    if (window.confirm('Are you sure you want to restart the game? All progress will be lost.')) {
+    const confirmed = window.confirm('Are you sure you want to restart the game? All progress will be lost.');
+    if (confirmed) {
       try {
         await onRestart();
         setHeldDice([false, false, false, false, false]);
