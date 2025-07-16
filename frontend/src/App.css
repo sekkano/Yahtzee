@@ -660,6 +660,11 @@ body {
   font-weight: bold;
 }
 
+.total-value {
+  color: #ffffff !important;
+  font-weight: bold;
+}
+
 .grand-total-row {
   background: rgba(255, 255, 0, 0.1);
   font-weight: bold;
