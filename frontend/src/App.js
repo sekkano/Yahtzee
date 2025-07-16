@@ -217,15 +217,15 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
                 )}
                 <tr className="subtotal-row">
                   <td>Subtotal</td>
-                  <td>{player.scorecard.upper_subtotal}</td>
+                  <td className="total-value">{player.scorecard.upper_subtotal}</td>
                 </tr>
                 <tr className="bonus-row">
                   <td>Bonus (63+)</td>
-                  <td>{player.scorecard.upper_bonus}</td>
+                  <td className="total-value">{player.scorecard.upper_bonus}</td>
                 </tr>
                 <tr className="total-row">
                   <td>Upper Total</td>
-                  <td>{player.scorecard.upper_total}</td>
+                  <td className="total-value">{player.scorecard.upper_total}</td>
                 </tr>
               </tbody>
             </table>
