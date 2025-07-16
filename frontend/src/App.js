@@ -242,11 +242,11 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
                 )}
                 <tr className="total-row">
                   <td>Lower Total</td>
-                  <td>{player.scorecard.lower_total}</td>
+                  <td className="total-value">{player.scorecard.lower_total}</td>
                 </tr>
                 <tr className="grand-total-row">
                   <td>GRAND TOTAL</td>
-                  <td>{player.scorecard.grand_total}</td>
+                  <td className="total-value">{player.scorecard.grand_total}</td>
                 </tr>
               </tbody>
             </table>
