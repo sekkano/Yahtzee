@@ -95,8 +95,31 @@ const TitleScreen = ({ onGameStart }) => {
   );
 };
 
-// Dice Component
+// Dice Component with rolling animation
 const Dice = ({ value, held, onClick, canClick, isRolling }) => {
+  const [displayValue, setDisplayValue] = useState(value);
+
+  // Animate dice values during rolling
+  useEffect(() => {
+    if (isRolling) {
+      const interval = setInterval(() => {
+        setDisplayValue(Math.floor(Math.random() * 6) + 1);
+      }, 50); // Change value every 50ms during rolling
+
+      const timeout = setTimeout(() => {
+        clearInterval(interval);
+        setDisplayValue(value);
+      }, 400); // Stop animation after 400ms
+
+      return () => {
+        clearInterval(interval);
+        clearTimeout(timeout);
+      };
+    } else {
+      setDisplayValue(value);
+    }
+  }, [isRolling, value]);
+
   const getDotPositions = (num) => {
     const positions = {
       1: [[2, 2]],
@@ -115,7 +138,7 @@ const Dice = ({ value, held, onClick, canClick, isRolling }) => {
       onClick={canClick ? onClick : null}
     >
       <div className="dice-face">
-        {getDotPositions(value).map((pos, index) => (
+        {getDotPositions(displayValue).map((pos, index) => (
           <div 
             key={index} 
             className="dot" 
@@ -180,51 +203,53 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
             <div className="grand-total">{player.scorecard.grand_total}</div>
           </div>
           
-          <table className="score-table">
-            <thead>
-              <tr>
-                <th colSpan="2">UPPER SECTION</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upperCategories.map(category => 
-                renderScoreRow(category, player, index === currentPlayer)
-              )}
-              <tr className="subtotal-row">
-                <td>Subtotal</td>
-                <td>{player.scorecard.upper_subtotal}</td>
-              </tr>
-              <tr className="bonus-row">
-                <td>Bonus (63+)</td>
-                <td>{player.scorecard.upper_bonus}</td>
-              </tr>
-              <tr className="total-row">
-                <td>Upper Total</td>
-                <td>{player.scorecard.upper_total}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="scorecard-sections">
+            <table className="score-table">
+              <thead>
+                <tr>
+                  <th colSpan="2">UPPER SECTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {upperCategories.map(category => 
+                  renderScoreRow(category, player, index === currentPlayer)
+                )}
+                <tr className="subtotal-row">
+                  <td>Subtotal</td>
+                  <td>{player.scorecard.upper_subtotal}</td>
+                </tr>
+                <tr className="bonus-row">
+                  <td>Bonus (63+)</td>
+                  <td>{player.scorecard.upper_bonus}</td>
+                </tr>
+                <tr className="total-row">
+                  <td>Upper Total</td>
+                  <td>{player.scorecard.upper_total}</td>
+                </tr>
+              </tbody>
+            </table>
 
-          <table className="score-table">
-            <thead>
-              <tr>
-                <th colSpan="2">LOWER SECTION</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lowerCategories.map(category => 
-                renderScoreRow(category, player, index === currentPlayer)
-              )}
-              <tr className="total-row">
-                <td>Lower Total</td>
-                <td>{player.scorecard.lower_total}</td>
-              </tr>
-              <tr className="grand-total-row">
-                <td>GRAND TOTAL</td>
-                <td>{player.scorecard.grand_total}</td>
-              </tr>
-            </tbody>
-          </table>
+            <table className="score-table">
+              <thead>
+                <tr>
+                  <th colSpan="2">LOWER SECTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lowerCategories.map(category => 
+                  renderScoreRow(category, player, index === currentPlayer)
+                )}
+                <tr className="total-row">
+                  <td>Lower Total</td>
+                  <td>{player.scorecard.lower_total}</td>
+                </tr>
+                <tr className="grand-total-row">
+                  <td>GRAND TOTAL</td>
+                  <td>{player.scorecard.grand_total}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       ))}
     </div>
@@ -258,11 +283,11 @@ const GameScreen = ({ gameState, onRoll, onScore, onRestart, onBackToTitle, poss
     setIsRolling(true);
     playDiceRollSound();
     
-    // Delay to show animation and ensure dice stop vertically
+    // Roll dice immediately and show animation
     setTimeout(async () => {
       await onRoll(heldDice);
       setIsRolling(false);
-    }, 600); // Increased time to ensure dice stop in readable position
+    }, 450); // Reduced delay for better responsiveness
   };
 
   const handleScore = async (category) => {
@@ -279,9 +304,14 @@ const GameScreen = ({ gameState, onRoll, onScore, onRestart, onBackToTitle, poss
 
   const handleRestart = async () => {
     if (window.confirm('Are you sure you want to restart the game? All progress will be lost.')) {
-      await onRestart();
-      setHeldDice([false, false, false, false, false]);
-      setLastScoredCategory(null);
+      try {
+        await onRestart();
+        setHeldDice([false, false, false, false, false]);
+        setLastScoredCategory(null);
+      } catch (error) {
+        console.error('Error restarting game:', error);
+        alert('Error restarting game. Please try again.');
+      }
     }
   };
 
@@ -294,70 +324,74 @@ const GameScreen = ({ gameState, onRoll, onScore, onRestart, onBackToTitle, poss
       <div className="game-header">
         <div className="header-left">
           <button className="back-button" onClick={onBackToTitle}>
-            ← Back to Title
+            ← Back
           </button>
           <button className="restart-button" onClick={handleRestart}>
-            🔄 Restart Game
+            🔄 Restart
           </button>
         </div>
-        <h1>YAHTZEE</h1>
-        <div className="turn-info">
-          Turn {gameState.turn_number} - {currentPlayer.name}'s Turn
+        <div className="header-center">
+          <h1>YAHTZEE</h1>
+          <div className="turn-info">
+            Turn {gameState.turn_number} - {currentPlayer.name}'s Turn
+          </div>
+        </div>
+        <div className="header-right">
+          <div className="roll-info-header">
+            <div className="rolls-remaining">Rolls: {gameState.rolls_remaining}</div>
+            <div className="rolls-used">Used: {rollsUsed}/3</div>
+          </div>
         </div>
       </div>
 
       <div className="game-content">
-        <div className="dice-section">
-          <div className="dice-container">
-            {gameState.dice.values.map((value, index) => (
-              <Dice
-                key={index}
-                value={value}
-                held={heldDice[index]}
-                onClick={() => toggleDie(index)}
-                canClick={gameState.rolls_remaining > 0}
-                isRolling={isRolling && !heldDice[index]}
-              />
-            ))}
-          </div>
-          
-          <div className="roll-controls">
-            <div className="roll-info">
-              <div className="rolls-remaining">
-                Rolls Remaining: {gameState.rolls_remaining}
-              </div>
-              <div className="rolls-used">
-                Rolls Used: {rollsUsed}/3
-              </div>
+        <div className="left-panel">
+          <div className="dice-section">
+            <div className="dice-container">
+              {gameState.dice.values.map((value, index) => (
+                <Dice
+                  key={index}
+                  value={value}
+                  held={heldDice[index]}
+                  onClick={() => toggleDie(index)}
+                  canClick={gameState.rolls_remaining > 0}
+                  isRolling={isRolling && !heldDice[index]}
+                />
+              ))}
             </div>
-            <button 
-              className="roll-button"
-              onClick={handleRoll}
-              disabled={gameState.rolls_remaining === 0 || isRolling}
-            >
-              {isRolling ? 'Rolling...' : 'Roll Dice'}
-            </button>
-            <div className="instruction">
-              {gameState.rolls_remaining > 0 ? 
-                "Click dice to hold them, then roll again" : 
-                (canScore ? "Select a category to score" : "No rolls remaining")}
-            </div>
-            {!canScore && gameState.rolls_remaining === 3 && (
-              <div className="warning">
-                Click "Roll Dice" to start your turn!
+            
+            <div className="roll-controls">
+              <button 
+                className="roll-button"
+                onClick={handleRoll}
+                disabled={gameState.rolls_remaining === 0 || isRolling}
+              >
+                {isRolling ? 'Rolling...' : 'Roll Dice'}
+              </button>
+              <div className="instruction">
+                {gameState.rolls_remaining > 0 ? 
+                  "Click dice to hold them" : 
+                  (canScore ? "Select a category to score" : "No rolls remaining")}
               </div>
-            )}
+              {!canScore && gameState.rolls_remaining === 3 && (
+                <div className="warning">
+                  Click "Roll Dice" to start your turn!
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <Scorecard
-          players={gameState.players}
-          currentPlayer={gameState.current_player}
-          onCategorySelect={handleScore}
-          possibleScores={possibleScores}
-          gameOver={gameState.game_over}
-          canScore={canScore}
-        />
+        <div className="right-panel">
+          <Scorecard
+            players={gameState.players}
+            currentPlayer={gameState.current_player}
+            onCategorySelect={handleScore}
+            possibleScores={possibleScores}
+            gameOver={gameState.game_over}
+            canScore={canScore}
+          />
+        </div>
       </div>
 
       {gameState.game_over && (
@@ -570,7 +604,7 @@ function App() {
       setPossibleScores({});
     } catch (error) {
       console.error('Error restarting game:', error);
-      alert('Error restarting game. Please try again.');
+      throw error; // Re-throw so handleRestart can catch it
     }
   };
 
