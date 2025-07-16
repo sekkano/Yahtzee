@@ -1,52 +1,510 @@
-import { useEffect } from "react";
-import "./App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React, { useState, useEffect } from 'react';
+import './App.css';
+import axios from 'axios';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+// Sound effects
+const playDiceRollSound = () => {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  
+  oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+  oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
+  oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.2);
+  
+  gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+  
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.3);
+};
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+// Title Screen Component
+const TitleScreen = ({ onGameStart }) => {
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <div className="title-screen">
+      <div className="title-container">
+        <h1 className="game-title">YAHTZEE</h1>
+        <div className="game-menu">
+          <button 
+            className="menu-button"
+            onClick={() => onGameStart('single', ['Player 1'])}
+          >
+            1 Player Game
+          </button>
+          <button 
+            className="menu-button"
+            onClick={() => onGameStart('multiplayer', ['Player 1', 'Player 2'])}
+          >
+            2 Player Game
+          </button>
+          <button 
+            className="menu-button secondary"
+            onClick={() => onGameStart('highscores', [])}
+          >
+            High Scores
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
 
+// Dice Component
+const Dice = ({ value, held, onClick, canClick }) => {
+  const getDotPositions = (num) => {
+    const positions = {
+      1: [[2, 2]],
+      2: [[1, 1], [3, 3]],
+      3: [[1, 1], [2, 2], [3, 3]],
+      4: [[1, 1], [1, 3], [3, 1], [3, 3]],
+      5: [[1, 1], [1, 3], [2, 2], [3, 1], [3, 3]],
+      6: [[1, 1], [1, 3], [2, 1], [2, 3], [3, 1], [3, 3]]
+    };
+    return positions[num] || [];
+  };
+
+  return (
+    <div 
+      className={`dice ${held ? 'held' : ''} ${canClick ? 'clickable' : ''}`}
+      onClick={canClick ? onClick : null}
+    >
+      <div className="dice-face">
+        {getDotPositions(value).map((pos, index) => (
+          <div 
+            key={index} 
+            className="dot" 
+            style={{
+              gridColumnStart: pos[0],
+              gridRowStart: pos[1]
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Scorecard Component
+const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, gameOver }) => {
+  const categories = [
+    { key: 'ones', label: 'Ones', section: 'upper' },
+    { key: 'twos', label: 'Twos', section: 'upper' },
+    { key: 'threes', label: 'Threes', section: 'upper' },
+    { key: 'fours', label: 'Fours', section: 'upper' },
+    { key: 'fives', label: 'Fives', section: 'upper' },
+    { key: 'sixes', label: 'Sixes', section: 'upper' },
+    { key: 'three_of_a_kind', label: '3 of a Kind', section: 'lower' },
+    { key: 'four_of_a_kind', label: '4 of a Kind', section: 'lower' },
+    { key: 'full_house', label: 'Full House', section: 'lower' },
+    { key: 'small_straight', label: 'Small Straight', section: 'lower' },
+    { key: 'large_straight', label: 'Large Straight', section: 'lower' },
+    { key: 'yahtzee', label: 'YAHTZEE', section: 'lower' },
+    { key: 'chance', label: 'Chance', section: 'lower' }
+  ];
+
+  const upperCategories = categories.filter(cat => cat.section === 'upper');
+  const lowerCategories = categories.filter(cat => cat.section === 'lower');
+
+  const renderScoreRow = (category, player, isActive) => {
+    const score = player.scorecard[category.key];
+    const possibleScore = possibleScores[category.key];
+    const canSelect = isActive && score === null && possibleScore !== undefined && !gameOver;
+
+    return (
+      <tr key={category.key} className={canSelect ? 'selectable' : ''}>
+        <td className="category-label">{category.label}</td>
+        <td 
+          className={`score-cell ${canSelect ? 'clickable' : ''}`}
+          onClick={canSelect ? () => onCategorySelect(category.key) : null}
+        >
+          {score !== null && score !== undefined ? score : 
+           (canSelect ? `(${possibleScore})` : '—')}
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <div className="scorecard-container">
+      {players.map((player, index) => (
+        <div key={player.id} className={`scorecard ${index === currentPlayer ? 'active' : ''}`}>
+          <div className="player-header">
+            <h3>{player.name}</h3>
+            <div className="grand-total">{player.scorecard.grand_total}</div>
+          </div>
+          
+          <table className="score-table">
+            <thead>
+              <tr>
+                <th colSpan="2">UPPER SECTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {upperCategories.map(category => 
+                renderScoreRow(category, player, index === currentPlayer)
+              )}
+              <tr className="subtotal-row">
+                <td>Subtotal</td>
+                <td>{player.scorecard.upper_subtotal}</td>
+              </tr>
+              <tr className="bonus-row">
+                <td>Bonus (63+)</td>
+                <td>{player.scorecard.upper_bonus}</td>
+              </tr>
+              <tr className="total-row">
+                <td>Upper Total</td>
+                <td>{player.scorecard.upper_total}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <table className="score-table">
+            <thead>
+              <tr>
+                <th colSpan="2">LOWER SECTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lowerCategories.map(category => 
+                renderScoreRow(category, player, index === currentPlayer)
+              )}
+              <tr className="total-row">
+                <td>Lower Total</td>
+                <td>{player.scorecard.lower_total}</td>
+              </tr>
+              <tr className="grand-total-row">
+                <td>GRAND TOTAL</td>
+                <td>{player.scorecard.grand_total}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Game Screen Component
+const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores }) => {
+  const [heldDice, setHeldDice] = useState([false, false, false, false, false]);
+
+  const toggleDie = (index) => {
+    if (gameState.rolls_remaining > 0) {
+      const newHeld = [...heldDice];
+      newHeld[index] = !newHeld[index];
+      setHeldDice(newHeld);
+    }
+  };
+
+  const handleRoll = () => {
+    onRoll(heldDice);
+    playDiceRollSound();
+  };
+
+  const handleScore = (category) => {
+    onScore(category);
+    setHeldDice([false, false, false, false, false]);
+  };
+
+  const currentPlayer = gameState.players[gameState.current_player];
+
+  return (
+    <div className="game-screen">
+      <div className="game-header">
+        <button className="back-button" onClick={onBackToTitle}>
+          ← Back to Title
+        </button>
+        <h1>YAHTZEE</h1>
+        <div className="turn-info">
+          Turn {gameState.turn_number} - {currentPlayer.name}'s Turn
+        </div>
+      </div>
+
+      <div className="game-content">
+        <div className="dice-section">
+          <div className="dice-container">
+            {gameState.dice.values.map((value, index) => (
+              <Dice
+                key={index}
+                value={value}
+                held={heldDice[index]}
+                onClick={() => toggleDie(index)}
+                canClick={gameState.rolls_remaining > 0}
+              />
+            ))}
+          </div>
+          
+          <div className="roll-controls">
+            <div className="rolls-remaining">
+              Rolls Remaining: {gameState.rolls_remaining}
+            </div>
+            <button 
+              className="roll-button"
+              onClick={handleRoll}
+              disabled={gameState.rolls_remaining === 0}
+            >
+              Roll Dice
+            </button>
+            <div className="instruction">
+              {gameState.rolls_remaining > 0 ? 
+                "Click dice to hold them, then roll again" : 
+                "Select a category to score"}
+            </div>
+          </div>
+        </div>
+
+        <Scorecard
+          players={gameState.players}
+          currentPlayer={gameState.current_player}
+          onCategorySelect={handleScore}
+          possibleScores={possibleScores}
+          gameOver={gameState.game_over}
+        />
+      </div>
+
+      {gameState.game_over && (
+        <div className="game-over-modal">
+          <div className="modal-content">
+            <h2>Game Over!</h2>
+            <p>Winner: {gameState.winner}</p>
+            <p>Final Score: {gameState.players.find(p => p.name === gameState.winner)?.scorecard.grand_total}</p>
+            <button className="menu-button" onClick={onBackToTitle}>
+              Back to Title
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// High Scores Component
+const HighScoresScreen = ({ onBackToTitle }) => {
+  const [highScores, setHighScores] = useState([]);
+
+  useEffect(() => {
+    const fetchHighScores = async () => {
+      try {
+        const response = await axios.get(`${API}/high-scores`);
+        setHighScores(response.data);
+      } catch (error) {
+        console.error('Error fetching high scores:', error);
+      }
+    };
+    fetchHighScores();
+  }, []);
+
+  return (
+    <div className="high-scores-screen">
+      <div className="high-scores-container">
+        <h1>HIGH SCORES</h1>
+        <button className="back-button" onClick={onBackToTitle}>
+          ← Back to Title
+        </button>
+        
+        <div className="high-scores-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Name</th>
+                <th>Score</th>
+                <th>Mode</th>
+              </tr>
+            </thead>
+            <tbody>
+              {highScores.map((score, index) => (
+                <tr key={score.id}>
+                  <td>{index + 1}</td>
+                  <td>{score.player_name}</td>
+                  <td>{score.score}</td>
+                  <td>{score.game_mode === 'single' ? '1P' : '2P'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Name Entry Modal Component
+const NameEntryModal = ({ isOpen, onSubmit, onCancel, score }) => {
+  const [name, setName] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (name.trim()) {
+      onSubmit(name.trim());
+      setName('');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h2>New High Score!</h2>
+        <p>You scored {score} points!</p>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Enter your name"
+            maxLength={20}
+            autoFocus
+          />
+          <div className="modal-buttons">
+            <button type="submit" className="menu-button">
+              Submit
+            </button>
+            <button type="button" className="menu-button secondary" onClick={onCancel}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Main App Component
 function App() {
+  const [currentScreen, setCurrentScreen] = useState('title');
+  const [gameState, setGameState] = useState(null);
+  const [possibleScores, setPossibleScores] = useState({});
+  const [showNameEntry, setShowNameEntry] = useState(false);
+  const [highScoreData, setHighScoreData] = useState(null);
+
+  const startGame = async (mode, playerNames) => {
+    if (mode === 'highscores') {
+      setCurrentScreen('highscores');
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${API}/games`, {
+        game_mode: mode,
+        player_names: playerNames
+      });
+      setGameState(response.data);
+      setCurrentScreen('game');
+      fetchPossibleScores(response.data.id);
+    } catch (error) {
+      console.error('Error starting game:', error);
+    }
+  };
+
+  const fetchPossibleScores = async (gameId) => {
+    try {
+      const response = await axios.get(`${API}/games/${gameId}/possible-scores`);
+      setPossibleScores(response.data);
+    } catch (error) {
+      console.error('Error fetching possible scores:', error);
+    }
+  };
+
+  const rollDice = async (heldDice) => {
+    try {
+      const response = await axios.post(`${API}/games/${gameState.id}/roll`, {
+        game_id: gameState.id,
+        held_dice: heldDice
+      });
+      setGameState(response.data);
+      fetchPossibleScores(gameState.id);
+    } catch (error) {
+      console.error('Error rolling dice:', error);
+    }
+  };
+
+  const scoreCategory = async (category) => {
+    try {
+      const response = await axios.post(`${API}/games/${gameState.id}/score`, {
+        game_id: gameState.id,
+        category: category
+      });
+      setGameState(response.data);
+      
+      // Check for high score if game is over
+      if (response.data.game_over) {
+        const winnerScore = response.data.players.find(p => p.name === response.data.winner)?.scorecard.grand_total;
+        checkHighScore(winnerScore, response.data.game_mode, response.data.winner);
+      } else {
+        fetchPossibleScores(gameState.id);
+      }
+    } catch (error) {
+      console.error('Error scoring category:', error);
+    }
+  };
+
+  const checkHighScore = async (score, gameMode, playerName) => {
+    try {
+      const response = await axios.get(`${API}/high-scores/check/${score}`);
+      if (response.data.is_high_score) {
+        setHighScoreData({ score, gameMode, playerName });
+        setShowNameEntry(true);
+      }
+    } catch (error) {
+      console.error('Error checking high score:', error);
+    }
+  };
+
+  const submitHighScore = async (name) => {
+    try {
+      await axios.post(`${API}/high-scores`, {
+        player_name: name,
+        score: highScoreData.score,
+        game_mode: highScoreData.gameMode
+      });
+      setShowNameEntry(false);
+      setHighScoreData(null);
+    } catch (error) {
+      console.error('Error submitting high score:', error);
+    }
+  };
+
+  const backToTitle = () => {
+    setCurrentScreen('title');
+    setGameState(null);
+    setPossibleScores({});
+  };
+
   return (
     <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      {currentScreen === 'title' && (
+        <TitleScreen onGameStart={startGame} />
+      )}
+      
+      {currentScreen === 'game' && gameState && (
+        <GameScreen
+          gameState={gameState}
+          onRoll={rollDice}
+          onScore={scoreCategory}
+          onBackToTitle={backToTitle}
+          possibleScores={possibleScores}
+        />
+      )}
+      
+      {currentScreen === 'highscores' && (
+        <HighScoresScreen onBackToTitle={backToTitle} />
+      )}
+
+      <NameEntryModal
+        isOpen={showNameEntry}
+        onSubmit={submitHighScore}
+        onCancel={() => setShowNameEntry(false)}
+        score={highScoreData?.score}
+      />
     </div>
   );
 }
