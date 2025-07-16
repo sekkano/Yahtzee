@@ -241,11 +241,9 @@ async def create_game(game_create: GameCreate):
         rolls_used=0
     )
     
-    # Start with initial dice roll
-    game.dice.values = [random.randint(1, 6) for _ in range(5)]
+    # Don't roll initial dice - let player start with their first roll
+    game.dice.values = [1, 1, 1, 1, 1]  # Default values
     game.dice.held = [False] * 5
-    game.rolls_remaining = 2  # Already used 1 roll for initial dice
-    game.rolls_used = 1
     
     await db.games.insert_one(game.dict())
     return game
@@ -341,11 +339,36 @@ async def score_category(game_id: str, score_request: ScoreRequest):
         if game_state.current_player == 0:
             game_state.turn_number += 1
         
-        # Reset for next turn - start with initial roll
-        game_state.dice.values = [random.randint(1, 6) for _ in range(5)]
+        # Reset for next turn - don't auto-roll
+        game_state.dice.values = [1, 1, 1, 1, 1]  # Default values
         game_state.dice.held = [False] * 5
-        game_state.rolls_remaining = 2  # Already used 1 roll for initial dice
-        game_state.rolls_used = 1
+        game_state.rolls_remaining = 3
+        game_state.rolls_used = 0
+    
+    await db.games.replace_one({"id": game_id}, game_state.dict())
+    return game_state
+
+@api_router.post("/games/{game_id}/restart")
+async def restart_game(game_id: str):
+    """Restart the current game"""
+    game = await db.games.find_one({"id": game_id})
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    
+    game_state = GameState(**game)
+    
+    # Reset all players' scorecards
+    for player in game_state.players:
+        player.scorecard = ScoreCard()
+    
+    # Reset game state
+    game_state.current_player = 0
+    game_state.dice = Dice()
+    game_state.rolls_remaining = 3
+    game_state.rolls_used = 0
+    game_state.turn_number = 1
+    game_state.game_over = False
+    game_state.winner = None
     
     await db.games.replace_one({"id": game_id}, game_state.dict())
     return game_state
