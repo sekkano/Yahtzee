@@ -7,22 +7,61 @@ const API = `${BACKEND_URL}/api`;
 
 // Sound effects
 const playDiceRollSound = () => {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
-  
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
-  
-  oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
-  oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.1);
-  oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.2);
-  
-  gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-  
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.3);
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Create multiple oscillators for richer sound
+    const oscillators = [];
+    const gainNodes = [];
+    
+    for (let i = 0; i < 3; i++) {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // Different frequencies for each oscillator
+      const baseFreq = 150 + (i * 100);
+      oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, audioContext.currentTime + 0.1);
+      oscillator.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, audioContext.currentTime + 0.3);
+      
+      gainNode.gain.setValueAtTime(0.03, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.4);
+      
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.4);
+      
+      oscillators.push(oscillator);
+      gainNodes.push(gainNode);
+    }
+  } catch (error) {
+    console.log('Audio not supported or blocked');
+  }
+};
+
+const playScoreSound = () => {
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.setValueAtTime(523, audioContext.currentTime); // C5
+    oscillator.frequency.setValueAtTime(659, audioContext.currentTime + 0.1); // E5
+    oscillator.frequency.setValueAtTime(784, audioContext.currentTime + 0.2); // G5
+    
+    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.3);
+  } catch (error) {
+    console.log('Audio not supported or blocked');
+  }
 };
 
 // Title Screen Component
@@ -57,7 +96,7 @@ const TitleScreen = ({ onGameStart }) => {
 };
 
 // Dice Component
-const Dice = ({ value, held, onClick, canClick }) => {
+const Dice = ({ value, held, onClick, canClick, isRolling }) => {
   const getDotPositions = (num) => {
     const positions = {
       1: [[2, 2]],
@@ -72,7 +111,7 @@ const Dice = ({ value, held, onClick, canClick }) => {
 
   return (
     <div 
-      className={`dice ${held ? 'held' : ''} ${canClick ? 'clickable' : ''}`}
+      className={`dice ${held ? 'held' : ''} ${canClick ? 'clickable' : ''} ${isRolling ? 'rolling' : ''}`}
       onClick={canClick ? onClick : null}
     >
       <div className="dice-face">
@@ -87,12 +126,13 @@ const Dice = ({ value, held, onClick, canClick }) => {
           />
         ))}
       </div>
+      {held && <div className="held-indicator">HELD</div>}
     </div>
   );
 };
 
 // Scorecard Component
-const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, gameOver }) => {
+const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, gameOver, canScore }) => {
   const categories = [
     { key: 'ones', label: 'Ones', section: 'upper' },
     { key: 'twos', label: 'Twos', section: 'upper' },
@@ -115,10 +155,10 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
   const renderScoreRow = (category, player, isActive) => {
     const score = player.scorecard[category.key];
     const possibleScore = possibleScores[category.key];
-    const canSelect = isActive && score === null && possibleScore !== undefined && !gameOver;
+    const canSelect = isActive && score === null && possibleScore !== undefined && !gameOver && canScore;
 
     return (
-      <tr key={category.key} className={canSelect ? 'selectable' : ''}>
+      <tr key={category.key} className={`${canSelect ? 'selectable' : ''} ${score !== null ? 'scored' : ''}`}>
         <td className="category-label">{category.label}</td>
         <td 
           className={`score-cell ${canSelect ? 'clickable' : ''}`}
@@ -194,6 +234,15 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
 // Game Screen Component
 const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores }) => {
   const [heldDice, setHeldDice] = useState([false, false, false, false, false]);
+  const [isRolling, setIsRolling] = useState(false);
+  const [lastScoredCategory, setLastScoredCategory] = useState(null);
+
+  // Update held dice when game state changes
+  useEffect(() => {
+    if (gameState?.dice?.held) {
+      setHeldDice(gameState.dice.held);
+    }
+  }, [gameState?.dice?.held]);
 
   const toggleDie = (index) => {
     if (gameState.rolls_remaining > 0) {
@@ -203,17 +252,34 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
     }
   };
 
-  const handleRoll = () => {
-    onRoll(heldDice);
+  const handleRoll = async () => {
+    if (gameState.rolls_remaining <= 0) return;
+    
+    setIsRolling(true);
     playDiceRollSound();
+    
+    // Delay to show animation
+    setTimeout(async () => {
+      await onRoll(heldDice);
+      setIsRolling(false);
+    }, 500);
   };
 
-  const handleScore = (category) => {
-    onScore(category);
-    setHeldDice([false, false, false, false, false]);
+  const handleScore = async (category) => {
+    setLastScoredCategory(category);
+    playScoreSound();
+    
+    // Add scoring animation
+    setTimeout(async () => {
+      await onScore(category);
+      setHeldDice([false, false, false, false, false]);
+      setLastScoredCategory(null);
+    }, 200);
   };
 
   const currentPlayer = gameState.players[gameState.current_player];
+  const canScore = gameState.rolls_used > 0;
+  const rollsUsed = gameState.rolls_used || 0;
 
   return (
     <div className="game-screen">
@@ -237,26 +303,37 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
                 held={heldDice[index]}
                 onClick={() => toggleDie(index)}
                 canClick={gameState.rolls_remaining > 0}
+                isRolling={isRolling && !heldDice[index]}
               />
             ))}
           </div>
           
           <div className="roll-controls">
-            <div className="rolls-remaining">
-              Rolls Remaining: {gameState.rolls_remaining}
+            <div className="roll-info">
+              <div className="rolls-remaining">
+                Rolls Remaining: {gameState.rolls_remaining}
+              </div>
+              <div className="rolls-used">
+                Rolls Used: {rollsUsed}/3
+              </div>
             </div>
             <button 
               className="roll-button"
               onClick={handleRoll}
-              disabled={gameState.rolls_remaining === 0}
+              disabled={gameState.rolls_remaining === 0 || isRolling}
             >
-              Roll Dice
+              {isRolling ? 'Rolling...' : 'Roll Dice'}
             </button>
             <div className="instruction">
               {gameState.rolls_remaining > 0 ? 
                 "Click dice to hold them, then roll again" : 
-                "Select a category to score"}
+                (canScore ? "Select a category to score" : "No rolls remaining")}
             </div>
+            {!canScore && (
+              <div className="warning">
+                You must roll at least once before scoring!
+              </div>
+            )}
           </div>
         </div>
 
@@ -266,15 +343,16 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
           onCategorySelect={handleScore}
           possibleScores={possibleScores}
           gameOver={gameState.game_over}
+          canScore={canScore}
         />
       </div>
 
       {gameState.game_over && (
         <div className="game-over-modal">
           <div className="modal-content">
-            <h2>Game Over!</h2>
-            <p>Winner: {gameState.winner}</p>
-            <p>Final Score: {gameState.players.find(p => p.name === gameState.winner)?.scorecard.grand_total}</p>
+            <h2>🎉 Game Over! 🎉</h2>
+            <p><strong>Winner:</strong> {gameState.winner}</p>
+            <p><strong>Final Score:</strong> {gameState.players.find(p => p.name === gameState.winner)?.scorecard.grand_total}</p>
             <button className="menu-button" onClick={onBackToTitle}>
               Back to Title
             </button>
@@ -288,6 +366,7 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
 // High Scores Component
 const HighScoresScreen = ({ onBackToTitle }) => {
   const [highScores, setHighScores] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchHighScores = async () => {
@@ -296,6 +375,8 @@ const HighScoresScreen = ({ onBackToTitle }) => {
         setHighScores(response.data);
       } catch (error) {
         console.error('Error fetching high scores:', error);
+      } finally {
+        setLoading(false);
       }
     };
     fetchHighScores();
@@ -310,26 +391,36 @@ const HighScoresScreen = ({ onBackToTitle }) => {
         </button>
         
         <div className="high-scores-table">
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Name</th>
-                <th>Score</th>
-                <th>Mode</th>
-              </tr>
-            </thead>
-            <tbody>
-              {highScores.map((score, index) => (
-                <tr key={score.id}>
-                  <td>{index + 1}</td>
-                  <td>{score.player_name}</td>
-                  <td>{score.score}</td>
-                  <td>{score.game_mode === 'single' ? '1P' : '2P'}</td>
+          {loading ? (
+            <div className="loading">Loading high scores...</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Name</th>
+                  <th>Score</th>
+                  <th>Mode</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {highScores.length > 0 ? (
+                  highScores.map((score, index) => (
+                    <tr key={score.id}>
+                      <td>{index + 1}</td>
+                      <td>{score.player_name}</td>
+                      <td>{score.score}</td>
+                      <td>{score.game_mode === 'single' ? '1P' : '2P'}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="no-scores">No high scores yet!</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
@@ -353,8 +444,8 @@ const NameEntryModal = ({ isOpen, onSubmit, onCancel, score }) => {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <h2>New High Score!</h2>
-        <p>You scored {score} points!</p>
+        <h2>🏆 New High Score! 🏆</h2>
+        <p>You scored <strong>{score}</strong> points!</p>
         <form onSubmit={handleSubmit}>
           <input
             type="text"
@@ -385,6 +476,7 @@ function App() {
   const [possibleScores, setPossibleScores] = useState({});
   const [showNameEntry, setShowNameEntry] = useState(false);
   const [highScoreData, setHighScoreData] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const startGame = async (mode, playerNames) => {
     if (mode === 'highscores') {
@@ -392,6 +484,7 @@ function App() {
       return;
     }
 
+    setLoading(true);
     try {
       const response = await axios.post(`${API}/games`, {
         game_mode: mode,
@@ -402,6 +495,9 @@ function App() {
       fetchPossibleScores(response.data.id);
     } catch (error) {
       console.error('Error starting game:', error);
+      alert('Error starting game. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -424,6 +520,7 @@ function App() {
       fetchPossibleScores(gameState.id);
     } catch (error) {
       console.error('Error rolling dice:', error);
+      alert('Error rolling dice. Please try again.');
     }
   };
 
@@ -444,6 +541,7 @@ function App() {
       }
     } catch (error) {
       console.error('Error scoring category:', error);
+      alert('Error scoring category. Please try again.');
     }
   };
 
@@ -470,6 +568,7 @@ function App() {
       setHighScoreData(null);
     } catch (error) {
       console.error('Error submitting high score:', error);
+      alert('Error submitting high score. Please try again.');
     }
   };
 
@@ -478,6 +577,15 @@ function App() {
     setGameState(null);
     setPossibleScores({});
   };
+
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner"></div>
+        <p>Loading game...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="App">
