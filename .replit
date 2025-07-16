@@ -5,6 +5,6 @@ channel = "stable-24_05"
 
 [deployment]
 deploymentTarget = "static"
-publicDir = "/"
+publicDir = "frontend/build"
 run = ["sh", "-c", ""]
-build = ["sh", "-c", "npm run build"]
+build = ["sh", "-c", "cd frontend && npm install && npm run build"]
