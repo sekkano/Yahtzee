@@ -68,6 +68,7 @@ class GameState(BaseModel):
     current_player: int = 0
     dice: Dice = Field(default_factory=Dice)
     rolls_remaining: int = 3
+    rolls_used: int = 0  # Track rolls used this turn
     turn_number: int = 1
     game_mode: str = "single"  # "single" or "multiplayer"
     game_over: bool = False
@@ -235,12 +236,16 @@ async def create_game(game_create: GameCreate):
     game = GameState(
         players=players,
         game_mode=game_create.game_mode,
-        current_player=0
+        current_player=0,
+        rolls_remaining=3,
+        rolls_used=0
     )
     
-    # Roll initial dice
+    # Start with initial dice roll
     game.dice.values = [random.randint(1, 6) for _ in range(5)]
     game.dice.held = [False] * 5
+    game.rolls_remaining = 2  # Already used 1 roll for initial dice
+    game.rolls_used = 1
     
     await db.games.insert_one(game.dict())
     return game
@@ -265,13 +270,17 @@ async def roll_dice(game_id: str, roll_request: RollDiceRequest):
     if game_state.rolls_remaining <= 0:
         raise HTTPException(status_code=400, detail="No rolls remaining")
     
-    # Roll non-held dice
+    # Roll non-held dice only
     for i in range(5):
         if not roll_request.held_dice[i]:
             game_state.dice.values[i] = random.randint(1, 6)
     
-    game_state.dice.held = roll_request.held_dice
+    # Update held dice state
+    game_state.dice.held = roll_request.held_dice.copy()
+    
+    # Update roll counters
     game_state.rolls_remaining -= 1
+    game_state.rolls_used += 1
     
     await db.games.replace_one({"id": game_id}, game_state.dict())
     return game_state
@@ -284,6 +293,11 @@ async def score_category(game_id: str, score_request: ScoreRequest):
         raise HTTPException(status_code=404, detail="Game not found")
     
     game_state = GameState(**game)
+    
+    # Must have used at least one roll before scoring
+    if game_state.rolls_used == 0:
+        raise HTTPException(status_code=400, detail="Must roll dice before scoring")
+    
     current_player = game_state.players[game_state.current_player]
     
     # Check if category is already scored
@@ -327,10 +341,11 @@ async def score_category(game_id: str, score_request: ScoreRequest):
         if game_state.current_player == 0:
             game_state.turn_number += 1
         
-        # Reset for next turn
+        # Reset for next turn - start with initial roll
         game_state.dice.values = [random.randint(1, 6) for _ in range(5)]
         game_state.dice.held = [False] * 5
-        game_state.rolls_remaining = 3
+        game_state.rolls_remaining = 2  # Already used 1 roll for initial dice
+        game_state.rolls_used = 1
     
     await db.games.replace_one({"id": game_id}, game_state.dict())
     return game_state
@@ -344,6 +359,10 @@ async def get_possible_scores(game_id: str):
     
     game_state = GameState(**game)
     current_player = game_state.players[game_state.current_player]
+    
+    # Only return possible scores if at least one roll has been used
+    if game_state.rolls_used == 0:
+        return {}
     
     possible_scores = {}
     categories = ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes',
