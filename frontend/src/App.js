@@ -179,15 +179,16 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
     const score = player.scorecard[category.key];
     const possibleScore = possibleScores[category.key];
     const canSelect = isActive && score === null && possibleScore !== undefined && !gameOver && canScore;
+    const hasScore = score !== null && score !== undefined;
 
     return (
-      <tr key={category.key} className={`${canSelect ? 'selectable' : ''} ${score !== null ? 'scored' : ''}`}>
+      <tr key={category.key} className={`${canSelect ? 'selectable' : ''} ${hasScore ? 'scored' : ''}`}>
         <td className="category-label">{category.label}</td>
         <td 
-          className={`score-cell ${canSelect ? 'clickable' : ''}`}
+          className={`score-cell ${canSelect ? 'clickable' : ''} ${hasScore ? 'scored-value' : ''}`}
           onClick={canSelect ? () => onCategorySelect(category.key) : null}
         >
-          {score !== null && score !== undefined ? score : 
+          {hasScore ? score : 
            (canSelect ? `(${possibleScore})` : '—')}
         </td>
       </tr>
