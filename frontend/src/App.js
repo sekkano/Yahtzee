@@ -232,7 +232,7 @@ const Scorecard = ({ players, currentPlayer, onCategorySelect, possibleScores, g
 };
 
 // Game Screen Component
-const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores }) => {
+const GameScreen = ({ gameState, onRoll, onScore, onRestart, onBackToTitle, possibleScores }) => {
   const [heldDice, setHeldDice] = useState([false, false, false, false, false]);
   const [isRolling, setIsRolling] = useState(false);
   const [lastScoredCategory, setLastScoredCategory] = useState(null);
@@ -258,11 +258,11 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
     setIsRolling(true);
     playDiceRollSound();
     
-    // Delay to show animation
+    // Delay to show animation and ensure dice stop vertically
     setTimeout(async () => {
       await onRoll(heldDice);
       setIsRolling(false);
-    }, 500);
+    }, 600); // Increased time to ensure dice stop in readable position
   };
 
   const handleScore = async (category) => {
@@ -277,6 +277,14 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
     }, 200);
   };
 
+  const handleRestart = async () => {
+    if (window.confirm('Are you sure you want to restart the game? All progress will be lost.')) {
+      await onRestart();
+      setHeldDice([false, false, false, false, false]);
+      setLastScoredCategory(null);
+    }
+  };
+
   const currentPlayer = gameState.players[gameState.current_player];
   const canScore = gameState.rolls_used > 0;
   const rollsUsed = gameState.rolls_used || 0;
@@ -284,9 +292,14 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
   return (
     <div className="game-screen">
       <div className="game-header">
-        <button className="back-button" onClick={onBackToTitle}>
-          ← Back to Title
-        </button>
+        <div className="header-left">
+          <button className="back-button" onClick={onBackToTitle}>
+            ← Back to Title
+          </button>
+          <button className="restart-button" onClick={handleRestart}>
+            🔄 Restart Game
+          </button>
+        </div>
         <h1>YAHTZEE</h1>
         <div className="turn-info">
           Turn {gameState.turn_number} - {currentPlayer.name}'s Turn
@@ -329,9 +342,9 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
                 "Click dice to hold them, then roll again" : 
                 (canScore ? "Select a category to score" : "No rolls remaining")}
             </div>
-            {!canScore && (
+            {!canScore && gameState.rolls_remaining === 3 && (
               <div className="warning">
-                You must roll at least once before scoring!
+                Click "Roll Dice" to start your turn!
               </div>
             )}
           </div>
@@ -353,9 +366,14 @@ const GameScreen = ({ gameState, onRoll, onScore, onBackToTitle, possibleScores 
             <h2>🎉 Game Over! 🎉</h2>
             <p><strong>Winner:</strong> {gameState.winner}</p>
             <p><strong>Final Score:</strong> {gameState.players.find(p => p.name === gameState.winner)?.scorecard.grand_total}</p>
-            <button className="menu-button" onClick={onBackToTitle}>
-              Back to Title
-            </button>
+            <div className="modal-buttons">
+              <button className="menu-button" onClick={handleRestart}>
+                Play Again
+              </button>
+              <button className="menu-button secondary" onClick={onBackToTitle}>
+                Back to Title
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -545,6 +563,17 @@ function App() {
     }
   };
 
+  const restartGame = async () => {
+    try {
+      const response = await axios.post(`${API}/games/${gameState.id}/restart`);
+      setGameState(response.data);
+      setPossibleScores({});
+    } catch (error) {
+      console.error('Error restarting game:', error);
+      alert('Error restarting game. Please try again.');
+    }
+  };
+
   const checkHighScore = async (score, gameMode, playerName) => {
     try {
       const response = await axios.get(`${API}/high-scores/check/${score}`);
@@ -598,6 +627,7 @@ function App() {
           gameState={gameState}
           onRoll={rollDice}
           onScore={scoreCategory}
+          onRestart={restartGame}
           onBackToTitle={backToTitle}
           possibleScores={possibleScores}
         />
