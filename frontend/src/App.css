@@ -609,8 +609,13 @@ body {
 .score-cell {
   text-align: center;
   font-weight: bold;
-  color: #ffff00;
+  color: #ffff00; /* Yellow for possible scores */
   transition: all 0.3s ease;
+}
+
+.score-cell.scored-value {
+  color: #ffffff; /* White for actual scored values */
+  background: rgba(0, 255, 0, 0.1);
 }
 
 .score-cell.clickable {
@@ -620,6 +625,7 @@ body {
   border-radius: 3px;
   transition: all 0.3s ease;
   position: relative;
+  color: #ffff00; /* Yellow for possible scores */
 }
 
 .score-cell.clickable:hover {
